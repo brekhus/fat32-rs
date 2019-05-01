@@ -1,0 +1,3 @@
+bytes 0x1FE and 0x1FF are the "boot signature" of an ibm-compatible master
+boot record. If these contain "FF" and "AA" respectively, it
+is presumed to be a valid MBR.

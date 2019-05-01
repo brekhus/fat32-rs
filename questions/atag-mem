@@ -1,0 +1,7 @@
+The memory reported by the raspberry pi is 994050048 bytes starting at offset
+zero. This is about 80 Megabytes shy of the reported 1 GiB. 21 Megabytes
+appear to be allocated to the video device according to the command line. I
+assume the remainder is the memory we reserved for the kernel image but the
+memory regions apparenlty overlap, so I am uncertain.
+
+

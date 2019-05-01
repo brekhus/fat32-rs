@@ -1,0 +1,15 @@
+Caller-specified layout benefits the allocator in two ways. First, it can
+hand out allocations that are closer in size to the requested size. Second, the allocator
+no longer *needs* to maintain length metadata for allocations, which impacts
+the efficiency of allocations.
+
+The caller gains fewer benefits from caller-specified layouts. The main
+advantage comes from being able to specify exotic alignment requirements. For
+example, some data structures might benefit from being page-aligned (circular
+buffers often exploit virtual memory to efficiently handle reads or writes
+that wrap; however this requires a page-aligned allocation). The disadvantage is that
+the caller needs to keep track of the size of the allocation. In a memory
+safe language like rust this is not a huge problem. The size of the
+allocation must be known to effectively perform range checks.
+
+

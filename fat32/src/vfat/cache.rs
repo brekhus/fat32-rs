@@ -1,5 +1,8 @@
 use std::{io, fmt};
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
+
+use std::io::Write;
 
 use traits::BlockDevice;
 
@@ -81,7 +84,8 @@ impl CachedDevice {
     ///
     /// Returns an error if there is an error reading the sector from the disk.
     pub fn get_mut(&mut self, sector: u64) -> io::Result<&mut [u8]> {
-        unimplemented!("CachedDevice::get_mut()")
+        self.get_internal(sector, true)
+
     }
 
     /// Returns a reference to the cached sector `sector`. If the sector is not
@@ -91,7 +95,54 @@ impl CachedDevice {
     ///
     /// Returns an error if there is an error reading the sector from the disk.
     pub fn get(&mut self, sector: u64) -> io::Result<&[u8]> {
-        unimplemented!("CachedDevice::get()")
+        Ok(&*self.get_internal(sector, false)?)
+    }
+
+
+    fn get_internal(&mut self, sector: u64, dirty: bool) -> io::Result<&mut [u8]> {
+        let (phys_sector, count) = { self.virtual_to_physical(sector) };
+        let mut entry = self.cache.entry(sector);
+        match entry {
+            Entry::Occupied(mut oe) => {
+                let mut cache_entry = oe.into_mut();
+                if dirty {
+                    cache_entry.dirty = true;
+                }
+                return Ok(&mut cache_entry.data);
+            },
+            Entry::Vacant(mut ve) => {
+                let mut data = Vec::with_capacity((count * self.device.sector_size()) as usize);
+                for i in phys_sector..(phys_sector + count) {
+                    self.device.read_all_sector(i, &mut data)?;
+                }
+                let mut cache_entry = ve.insert(CacheEntry { data: data, dirty: dirty });
+                return Ok(&mut cache_entry.data);
+            }
+        }
+    }
+}
+
+impl BlockDevice for CachedDevice {
+    fn read_sector(&mut self, n: u64, mut buf: &mut [u8]) -> io::Result<usize> {
+        if let Some(entry) = self.cache.get(&n) {
+            buf.write(&entry.data)
+        } else {
+             Err(io::Error::new(io::ErrorKind::NotFound, "sector not available"))
+        }
+    }
+
+    fn write_sector(&mut self, n: u64, buf: &[u8]) -> io::Result<usize> {
+        let sector_size = { self.sector_size() as usize };
+        if let Some(mut entry) = self.cache.get_mut(&n) {
+            if buf.len() < sector_size {
+                Err(io::Error::new(io::ErrorKind::UnexpectedEof, "write too small"))
+            } else {
+                entry.dirty = true;
+                entry.data.write(buf)
+            }
+        } else {
+             Err(io::Error::new(io::ErrorKind::NotFound, "sector not available"))
+        }
     }
 }
 

@@ -1,0 +1,9 @@
+1. calculate fat_start_sector = (reserved_sectors + 1)
+2. calculate root_dir_head_cluster = fat_start_sector * sector_bytes + (root_cluster * 32)
+3. calculate start of data. start_sector = fat_start_sector + (fat_sectors * fat_count) + 1
+
+repeat steps 4,5 for to find a/, b/ and c.txt
+4. walk cluster chain, gather list of clusters. clusters = [..]
+5. locate dir entry. the directory entry contains the first cluster for the file being accessed.
+
+at this point you've learned the starting cluster for c.txt.

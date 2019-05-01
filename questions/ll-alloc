@@ -1,0 +1,6 @@
+If the data structures used by an allocator need to allocate memory that
+means the allocator needs some kind of (presumably simpler) allocator. Using
+an intrsuively linked list avoids this problem of needing to allocate memory
+as the free allocations are the storage used to keep track of the free
+allocations. with rusts allocator data model, the allocator doesn't need to
+keep track of outstandng requests.

@@ -1,0 +1,6 @@
+From my reading, the rationale for these alignments comes From considering
+the problem of guaranteeing aligned reads for the largest architectural
+primitives (at the time). For x86, this was a double (8 bytes) when the
+alignment was chosen. For x86-64, 128-bit (16 byte) sse types dictated the
+alignment. Narrower alignments require the compiler insert instructions to
+align the stack for locals and the user beware when allocating heap memory.

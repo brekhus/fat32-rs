@@ -1,0 +1,2 @@
+A 4 byte number stores the size of the file in bytes.
+This implies the maximum size of a file is 4 GiB.

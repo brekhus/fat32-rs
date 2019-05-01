@@ -1,0 +1,13 @@
+1. My allocator throws away any newly allocated memory that isn't at the
+desired alignment. The excess allocation should be stored in the appropriate
+free lists. 
+
+2. My allocator does not split allocations. If a request is made for 2049
+bytes, 2047 bytes of memory go to waste., a better approach could reduce this
+to just 7 bytes of waste at the cost of tracking many additional entries in
+the free list.
+
+3. My allocator uses the larger of the requested alignment and the requested
+size to determine the bin. This can waste extremely large amounts of memory
+when large alignments are requested for small allocations. For example, 8
+bytes aligned at 4096. A similar approach to 2 could be employed here.

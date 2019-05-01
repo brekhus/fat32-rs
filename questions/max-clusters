@@ -1,0 +1,5 @@
+268435437 clusters are possible. this is a direct consequence of the 28 bit
+address space of the clusters, less a small number of reserved values.
+
+ I would expect FAT16 and FAT12 to have correspondingly smaller address
+ spaces (around 16 and 12 bits respectively).

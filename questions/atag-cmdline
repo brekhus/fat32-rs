@@ -1,0 +1,10 @@
+The command line is "bcm2708_fb.fbwidth=656 bcm2708_fb.fbheight=416
+bcm2708_fb.fbswap=1 dma.dmachans=0x7f35 bcm2709.boardrev=0xa02082
+bcm2709.serial=0x36e4c5b9 bcm2709.uart_clock=48000000
+smsc95xx.macaddr=B8:27:EB:E4:C5:B9 vc_mem.mem_base=0x3ec00000
+vc_mem.mem_size=0x40000000 console=ttyS0,115200 kgdboc=ttyS0,115200
+console=tty1 root=/dev/mmcblk0p2 rootfstype=ext4 rootwait".
+
+This seems to be configuration for the devices on the raspberry pi. For
+example, the first two parameters appear to specify the width and height of
+the frame buffer.

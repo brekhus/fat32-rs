@@ -1,0 +1,12 @@
+My bin allocator has 10 bins, ranging from 0 to 2^13 byte allocations. It
+handles alignment by enforcing allocations are aligned to match the bin they
+reside in. For example, a 4k allocation is 4k aligned. This simplifies
+locating a suitable allocation but wastes storage.
+
+Internal fragmentation is bounded to be 50% with my allocator design. This
+could be improved by splitting allocations into smaller bins.
+
+External fragmentation is unbounded in my allocator design. This is because
+there is no mechanism to split large allocations or coalesce smaller
+allocations.
+

@@ -1,0 +1,9 @@
+A combination of three records positively identify a LFN directory entry.
+
+First, the attributes byte (0x0B) is always 0X0F. This combination of
+attributes is nonsensical and ignored by most systems.
+
+Second, the type byte (0x0C) is always 0.
+
+Finally, if the start of file cluster (0x14, 0x1A) is marked 0 for LFNs in conjunction
+with a non-zero value for the file size in bytes (0x1C).

@@ -1,0 +1,28 @@
+Exposing a safe interface to an unsafe structure benefits
+the programmer (end-user) in at least two ways:
+
+First, it reduces the cognitive load on the programmer. The variant nature of
+the data structure ends up being encoded in the type system. If the
+programmer makes a mistake in use of the type, they get a compiler or runtime
+error at worst, instead of undefined behavior.
+
+Second, it avoids infecting unrelated parts of the program
+with unsafe. This is helpful to the programmer because the
+rust provides limited guidance and no safety guarantees in
+unsafe regions. A related benefit is gained while debugging.
+Memory safety crashes have a root cause that is constrained
+to be within the unsafe regions of the program.
+
+You can gain some of the benefits of rust in c with static analysis and
+restricting use of certain language features. Static analysis can be
+particularly helpful in identifying pointer arithmetic issues, although it
+usually requires the programmer specify invariants on parameters that are
+involved in the arithmetic. Modeling some of the range-checked
+types from rust in c can also be helpful (e.g. struct slice { uint8_t *data;
+size_t len; }). The applicability of this is limited if you need to interact
+with existing c software, which usually deals with length checks of raw
+pointers in an ad-hoc way. Finally, memory-leaks and double
+frees can be avoided by using reference counted pointers or
+garbage collectors but again, these interact poorly with
+libraries.
+

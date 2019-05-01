@@ -1,0 +1,11 @@
+bump::Allocator::alloc 
+RawVec::try_reserve
+RawVec::reserve
+Vec::reserve
+Vec::push
+
+When the vector exhausts capacity, it requests the underlying raw vector
+reserve an additional element. The RawVec first tries reallocating the
+existing allocation to grow to support the extra element. This will always
+fail with our bump-allocator implementation. When the realloc fails, it
+requests a new allocation, which invokes our bump allocator's alloc method.
