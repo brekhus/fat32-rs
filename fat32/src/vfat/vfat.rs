@@ -3,11 +3,12 @@ use std::io::Write;
 use std::io;
 use std::mem::size_of;
 use std::ops::Range;
-use std::path::Path;
+use std::path::{Path, Component};
 
 use util::SliceExt;
 use mbr::MasterBootRecord;
 use vfat::{Shared, Cluster, File, Dir, Entry, FatEntry, Error, Status};
+use vfat::{Metadata, Attributes, Date, Time, Timestamp};
 use vfat::{BiosParameterBlock, CachedDevice, Partition};
 use traits::{FileSystem, BlockDevice};
 
@@ -21,6 +22,14 @@ pub struct VFat {
     data_start_sector: u64,
     root_dir_cluster: Cluster,
 }
+
+const ROOT_NAME: &str = "";
+const ROOT_MD: Metadata = Metadata { 
+    attribs: Attributes(0),
+    created: Timestamp { date: Date(0), time: Time(0) },
+    accessed: Date(0),
+    modified: Timestamp { date: Date(0), time: Time(0) },
+};
 
 impl VFat {
     pub fn from<T>(mut device: T) -> Result<Shared<VFat>, Error>
@@ -53,12 +62,13 @@ impl VFat {
     }
 
     fn coords(&self, cluster: Cluster, offset: usize) -> (Range<u64>, usize) {
-        let cluster_start_sector = self.data_start_sector + ((cluster.0 as u64) * (self.sectors_per_cluster as u64));
+        let cluster_start_sector = self.data_start_sector + (((cluster.0  - 1) as u64) * (self.sectors_per_cluster as u64));
         let start_sector = cluster_start_sector + ((offset / (self.bytes_per_sector as usize)) as u64);
         let end_sector = cluster_start_sector + (self.sectors_per_cluster as u64);
         let sector_offset = offset % (self.bytes_per_sector as usize);
         (start_sector..end_sector, sector_offset)
     }
+
 
     pub fn read_cluster(
         &mut self,
@@ -66,20 +76,12 @@ impl VFat {
         offset: usize,
         mut buf: &mut [u8]
     ) -> io::Result<usize> {
+        println!("cluster={:?} offset=0x{:08x}", cluster, offset);
         assert!(offset < (self.sectors_per_cluster as usize) * (self.bytes_per_sector as usize),
                 "read offset exceeds cluster size");
 
-        // validate fat entry
-        {
-            let entry = self.fat_entry(cluster)?;
-            match entry.status() {
-                Status::Data(_) | Status::Eoc(_) => (),
-                Status::Reserved => panic!("read of reserved cluster"),
-                Status::Free => panic!("read of free cluster"),
-                Status::Bad => return Err(io::Error::new(io::ErrorKind::InvalidData, "cluster contains bad sector(s)"))
-            }
-        }
         let (sectors, start_offset) = { self.coords(cluster, offset) };
+        println!("sectors={:?} byteoffset={:?}", sectors, start_offset);
         let mut bytes_read = 0;
         let start_sector = sectors.start;
         for sector in sectors {
@@ -121,23 +123,54 @@ impl VFat {
     }
 
     pub fn fat_entry(&mut self, cluster: Cluster) -> io::Result<&FatEntry> {
-        assert!(cluster.0 < (self.sectors_per_fat as u32 / size_of::<FatEntry>() as u32), "cluster out of bounds");
-        let entry_sector = self.fat_start_sector + (cluster.0 as u64 * size_of::<FatEntry>() as u64/ self.bytes_per_sector as u64);
-        let entry_offset = (cluster.0  % (self.bytes_per_sector as u32 / size_of::<FatEntry>() as u32)) as isize;
-        let mut fat_entry = &mut (self.device.get_mut(entry_sector)?[0]) as *mut u8 as *mut FatEntry;
+        println!("cluster={:?}", cluster);
+        assert!(cluster.0 < (self.bytes_per_sector as u32 * (self.sectors_per_fat as u32 / size_of::<FatEntry>() as u32)), "cluster out of bounds");
+        let entry_sector = self.fat_start_sector + (cluster.0 as u64 * size_of::<FatEntry>() as u64 / self.bytes_per_sector as u64);
+        let entry_offset = ((cluster.0 * size_of::<FatEntry>() as u32) % self.bytes_per_sector as u32) as usize;
+        let mut fat_entry = &mut (self.device.get_mut(entry_sector)?[entry_offset]) as *mut u8 as *mut FatEntry;
+
         unsafe {
+            println!("cluster={:?} entry_sector={:08x} entry_offset={:08x} fat_entry={:?}", cluster, entry_sector, entry_offset, *fat_entry);
             Ok(&*fat_entry)
         }
+    }
+
+    fn root(&self, aref: &Shared<VFat>) -> Dir {
+        Dir { fs: aref.clone(), start_cluster: self.root_dir_cluster, name: String::from(ROOT_NAME), metadata: ROOT_MD }
     }
 }
 
 impl<'a> FileSystem for &'a Shared<VFat> {
-    type File = ::traits::Dummy;
-    type Dir = ::traits::Dummy;
-    type Entry = ::traits::Dummy;
+    type File = File;
+    type Dir = Dir;
+    type Entry = Entry;
 
     fn open<P: AsRef<Path>>(self, path: P) -> io::Result<Self::Entry> {
-        unimplemented!("FileSystem::open()")
+        let mut cwd = self.borrow_mut().root(self);
+        {
+            let mut fs = self.borrow_mut();
+            println!("fs: {:?}", *fs);
+        }
+        let mut iter = path.as_ref().components().peekable();
+        assert_eq!(iter.next(), Some(Component::RootDir));
+        loop {
+            let el = match iter.next() {
+                Some(Component::Normal(x)) => x,
+                Some(_) => panic!(),
+                None => break,
+            };
+            match cwd.find(el)? {
+                Entry::Dir(d) => cwd = d,
+                Entry::File(f) => {
+                    if iter.peek().is_none() {
+                        return Ok(Entry::File(f));
+                    } else {
+                        return Err(io::Error::new(io::ErrorKind::NotFound, "file not found"));
+                    }
+                }
+            }
+        }
+        return Ok(Entry::Dir(cwd));
     }
 
     fn create_file<P: AsRef<Path>>(self, _path: P) -> io::Result<Self::File> {

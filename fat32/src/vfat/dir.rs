@@ -10,8 +10,8 @@ use vfat::{Metadata, Attributes, Timestamp, Time, Date};
 
 #[derive(Debug)]
 pub struct Dir {
-    fs: Shared<VFat>,
-    start_cluster: Cluster,
+    pub fs: Shared<VFat>,
+    pub start_cluster: Cluster,
     pub name: String,
     pub metadata: Metadata
 }
@@ -41,8 +41,8 @@ enum RegularSeq {
 impl VFatRegularDirEntry {
     fn seq(&self) -> RegularSeq {
         match self.name[0] {
-            0 => RegularSeq::Deleted,
-            0xE5 => RegularSeq::EndOfDirectory,
+            0xE5 => RegularSeq::Deleted,
+            0 => RegularSeq::EndOfDirectory,
             _ => RegularSeq::Valid,
         }
     }
@@ -66,8 +66,13 @@ impl VFatRegularDirEntry {
             }
         }
         let mut name = Vec::with_capacity(12);
-        for &part in &[self.name.as_ref(), [0x2E /* . */].as_ref(), self.ext.as_ref()] {
-            name.extend(part.iter().take_while(|&&x| x != 0 && x != 0x20));
+        // directories cant't have 8.3 extensions
+        if self.attribs & 0x10 == 0 {
+            for &part in &[self.name.as_ref(), [0x2E /* . */].as_ref(), self.ext.as_ref()] {
+                name.extend(part.iter().take_while(|&&x| x != 0 && x != 0x20));
+            }
+        } else {
+            name.extend(self.name.iter().take_while(|&&x| x != 0 && x != 0x20));
         }
         String::from_utf8(name).expect("invalid dos name")
     }
@@ -100,6 +105,7 @@ pub struct VFatLfnDirEntry {
     name_part_3: [u16; 2],
 }
 
+#[derive(Debug)]
 enum LfnSeq {
     Deleted,
     EndOfDirectory,
@@ -110,12 +116,13 @@ impl VFatLfnDirEntry {
 
     fn seq(&self) -> LfnSeq {
         if self.sequence_number == 0 {
-            LfnSeq::Deleted 
+            LfnSeq::EndOfDirectory 
         } else if self.sequence_number == 0xE5 {
-            LfnSeq::EndOfDirectory
+            LfnSeq::Deleted
         } else {
-            let first = 0b100000 & self.sequence_number == 0;
-            let last = 0b1000000 & self.sequence_number == 1;
+            let first = (0x20 & self.sequence_number) == 0;
+            let last = (0x40 & self.sequence_number) == 0x40;
+            // println!("seq={:02x} first={:?} last={:?}", self.sequence_number, first, last);
             LfnSeq::Seq(self.sequence_number & 0b11111, first, last)
         }
     }
@@ -134,9 +141,10 @@ impl VFatLfnDirEntry {
 }
 
 #[repr(C, packed)]
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct VFatUnknownDirEntry {
-    unknown_1: [u8; 11],
+    seq: u8,
+    unknown_1: [u8; 10],
     attribs: u8,
     dtype: u8,
     unknown_2: [u8; 13],
@@ -195,6 +203,7 @@ pub struct DirIter {
     curr_iter: Option<IntoIter<VFatUnknownDirEntry>>
 }
 
+#[derive(Debug)]
 enum LfnEnt {
     None,
     Pos(u8, u8, Vec<u16>),
@@ -204,22 +213,22 @@ enum LfnEnt {
 impl LfnEnt {
     fn next(self, seq: LfnSeq, lfn: &VFatLfnDirEntry) -> LfnEnt {
         if let LfnSeq::Seq(pos, first, last) = seq {
-            if first {
+            if last {
                 let mut name = match self {
                     LfnEnt::Pos(_, _, mut n) => { n.clear(); n },
                     LfnEnt::End(_, mut n) => { n.clear(); n },
                     LfnEnt::None => { Vec::with_capacity(255) },
                 };
 
-                if !last {
+                if pos != 1 {
                     LfnEnt::Pos(pos, lfn.checksum, lfn.extend_name(name))
                 } else {
                     LfnEnt::End(lfn.checksum, lfn.extend_name(name))
                 }
             } else {
                 if let LfnEnt::Pos(curr_pos, curr_checksum, name) = self {
-                    if curr_pos + 1 == pos && curr_checksum == lfn.checksum {
-                        if !last {
+                    if curr_pos - 1 == pos && curr_checksum == lfn.checksum {
+                        if pos != 1 {
                             LfnEnt::Pos(pos, lfn.checksum, lfn.extend_name(name))
                         } else {
                             LfnEnt::End(lfn.checksum, lfn.extend_name(name))
@@ -243,6 +252,7 @@ impl Iterator for DirIter {
     fn next(&mut self) -> Option<Self::Item> {
         let mut lfn_ent = LfnEnt::None;
         loop {
+            // println!("{:?}", lfn_ent);
             if self.curr_iter.is_some() {
                 let iter = &mut *self.curr_iter.as_mut().unwrap();
                 for entry in iter {
@@ -251,11 +261,15 @@ impl Iterator for DirIter {
                         DirEntry::Regular(ref r) => {
                             match r.seq() {
                                 RegularSeq::Deleted => continue,
-                                RegularSeq::EndOfDirectory =>  return None,
+                                RegularSeq::EndOfDirectory =>  {
+                                    // println!("end of directory");
+                                    return None
+                                },
                                 RegularSeq::Valid => {
                                     let name = r.name(lfn_ent);
                                     let metadata = r.metadata();
-                                    if r.attribs & 0x10 == 1 {
+                                    if r.attribs & 0x10 != 0 {
+                                        println!("dir name={:} md={:?}", name, metadata);
                                         return Some(Entry::Dir(Dir { 
                                             fs: self.fs.clone(),
                                             start_cluster: r.start_cluster(), 
@@ -263,6 +277,7 @@ impl Iterator for DirIter {
                                             metadata,
                                         }));
                                     } else {
+                                        println!("file name={:} md={:?}", name, metadata);
                                         return Some(Entry::File(File::new(
                                             self.fs.clone(),
                                             r.start_cluster(),
@@ -275,10 +290,14 @@ impl Iterator for DirIter {
                         },
                         DirEntry::Lfn(ref lfn) => {
                             let seq = lfn.seq();
+                            // println!("{:?}", seq);
                             match seq {
                                 LfnSeq::Deleted => continue,
                                 LfnSeq::EndOfDirectory => return None,
-                                LfnSeq::Seq(_, _, _) => { lfn_ent = lfn_ent.next(seq, lfn); },
+                                LfnSeq::Seq(_, _, _) => { 
+                                    lfn_ent = lfn_ent.next(seq, lfn); 
+                                    // println!("{:?}", lfn_ent);
+                                },
                             };
                         }
                     };
@@ -288,9 +307,28 @@ impl Iterator for DirIter {
             if let Some(cluster) = self.next {
                 let mut fs = self.fs.borrow_mut();
                 let mut buf = Vec::with_capacity(fs.bytes_per_sector as usize * fs.sectors_per_cluster as usize);
+                unsafe {
+                    buf.set_len(fs.bytes_per_sector as usize * fs.sectors_per_cluster as usize);
+                }
+
                 let bytes_read = fs.borrow_mut().read_cluster(cluster, 0, &mut buf).expect("read of directory failed");
                 assert_eq!(bytes_read, buf.capacity());
-                self.curr_iter = Some(unsafe { buf.cast().into_iter() });
+                let mut i = 0;
+                for &byte in &buf {
+                    print!("{:02x}", byte);
+                    i += 1;
+                    if i % 16 == 0 {
+                        println!();
+                    } else if i % 2 == 0 {
+                        print!(" ");
+                    }
+                }
+                println!();
+                let dirents : Vec<VFatUnknownDirEntry> = unsafe { buf.cast() };
+                for (i, &dirent) in dirents.iter().enumerate() {
+                    println!("dirents[{:02}] = Dirent(seq={:02x}, attribs={:02x} dtype={:02x} clust_num={:02x})", i, dirent.seq, dirent.attribs, dirent.dtype, dirent.clust_num);
+                }
+                self.curr_iter = Some(dirents.into_iter());
                 self.next = match fs.fat_entry(cluster).expect("directory cluster lookup failed").status() {
                     Status::Data(cluster) => Some(cluster),
                     Status::Eoc(_) => None,
@@ -309,6 +347,7 @@ impl traits::Dir for Dir {
     type Entry = Entry;
     type Iter = DirIter;
     fn entries(&self)-> io::Result<Self::Iter> {
+        println!("directory='{:}' entries", self.name);
         Ok(DirIter { 
             fs: self.fs.clone(),
             next: Some(self.start_cluster),

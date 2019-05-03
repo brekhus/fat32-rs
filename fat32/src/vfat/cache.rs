@@ -12,6 +12,7 @@ struct CacheEntry {
     dirty: bool
 }
 
+#[derive(Debug)]
 pub struct Partition {
     /// The physical sector where the partition begins.
     pub start: u64,
@@ -100,7 +101,8 @@ impl CachedDevice {
 
 
     fn get_internal(&mut self, sector: u64, dirty: bool) -> io::Result<&mut [u8]> {
-        let (phys_sector, count) = { self.virtual_to_physical(sector) };
+        let (phys_sector, count) = { self.virtual_to_physical(sector + self.partition.start) };
+        println!("logical_sector={:} phys_sector_offset={:} count={:}", sector, phys_sector, count);
         let mut entry = self.cache.entry(sector);
         match entry {
             Entry::Occupied(mut oe) => {
@@ -153,7 +155,8 @@ impl fmt::Debug for CachedDevice {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("CachedDevice")
             .field("device", &"<block device>")
-            .field("cache", &self.cache)
+            .field("cache", &self.cache.keys())
+            .field("partition", &self.partition)
             .finish()
     }
 }

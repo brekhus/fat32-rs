@@ -5,12 +5,12 @@ use traits;
 /// A date as represented in FAT32 on-disk structures.
 #[repr(C, packed)]
 #[derive(Default, Debug, Copy, Clone, PartialEq, Eq)]
-pub struct Date(u16);
+pub struct Date(pub u16);
 
 /// Time as represented in FAT32 on-disk structures.
 #[repr(C, packed)]
 #[derive(Default, Debug, Copy, Clone, PartialEq, Eq)]
-pub struct Time(u16);
+pub struct Time(pub u16);
 
 /// File attributes as represented in FAT32 on-disk structures.
 #[repr(C, packed)]

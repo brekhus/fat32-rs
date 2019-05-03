@@ -58,6 +58,7 @@ impl BiosParameterBlock {
             device.read_sector(sector, &mut bpb_as_buf)?;
         }
         if bpb.partition_signature == 0xAA55 {
+            println!("bpb = {:?}", bpb);
             Ok(bpb)
         } else {
             Err(Error::BadSignature)

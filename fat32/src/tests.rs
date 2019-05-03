@@ -289,6 +289,7 @@ fn hash_files_recursive<P: AsRef<Path>>(
     path: P
 ) -> ::std::fmt::Result {
     let path = path.as_ref();
+    println!("path={:?}", path);
     let mut entries = vfat.open_dir(path)
         .expect("directory")
         .entries()
