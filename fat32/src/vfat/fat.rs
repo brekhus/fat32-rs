@@ -20,17 +20,18 @@ pub enum Status {
 }
 
 #[repr(C, packed)]
-pub struct FatEntry(pub u32);
+pub struct FatEntry(u32);
 
 impl FatEntry {
     /// Returns the `Status` of the FAT entry `self`.
     pub fn status(&self) -> Status {
         let cluster = Cluster::from(self.0);
-        match cluster.0 {
-            0x0000002..=0xFFFFFEF => Status::Data(cluster),
-            0xFFFFFF8..=0xFFFFFFF => Status::Eoc(cluster.0),
-            1 | 0xFFFFFF0..=0xFFFFFF7 => Status::Reserved,
-            0 => Status::Free,
+        let id = cluster.id();
+        match id {
+            0x0000002..=0xFFFFFEF => Data(cluster),
+            0xFFFFFF8..=0xFFFFFFF => Eoc(id),
+            1 | 0xFFFFFF0..=0xFFFFFF7 => Reserved,
+            0 => Free,
             _ => unreachable!(),
         }
     }

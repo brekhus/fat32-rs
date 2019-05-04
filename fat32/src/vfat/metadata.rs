@@ -20,8 +20,8 @@ pub struct Attributes(pub u8);
 /// A structure containing a date and time.
 #[derive(Default, Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Timestamp {
+    pub time: Time,
     pub date: Date,
-    pub time: Time
 }
 
 /// Metadata for a directory entry.
@@ -35,23 +35,23 @@ pub struct Metadata {
 
 impl traits::Timestamp for Timestamp {
     fn year(&self) -> usize {
-        (1980 + (self.date.0 >> 8)) as usize
+        (1980 + (self.date.0 >> 9)) as usize
     }
 
     fn month(&self) -> u8 {
-        ((self.date.0 >> 4) & 0x0F) as u8
+        ((self.date.0 >> 5) & 0x0F) as u8
     }
 
     fn day(&self) -> u8 {
-        (self.date.0 & 0x0F) as u8
+        (self.date.0 & 0x1F) as u8
     }
 
     fn hour(&self) -> u8 {
-        ((self.time.0 >> 10) & 0xFF) as u8
+        ((self.time.0 >> 11) & 0x3F) as u8
     }
 
     fn minute(&self) -> u8 {
-        ((self.time.0 >> 4) & 0x1F) as u8
+        ((self.time.0 >> 5) & 0x3F) as u8
     }
 
     fn second(&self) -> u8 {

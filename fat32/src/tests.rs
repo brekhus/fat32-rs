@@ -254,6 +254,33 @@ fn test_all_dir_entries() {
     assert_hash_eq!("mock 4 all dir entries", hash, hash_for!("all-entries-4"));
 }
 
+/*
+#[test]
+fn test_coders_mock1() {
+    let fs = vfat_from_resource!("mock1.fat32.img");
+    let path = Path::new("/NOTES/LEC2/CODE/CODE.RS");
+    let mut file = {
+        fs.open(&path).expect("file").into_file().unwrap()
+    };
+    println!("size={:}", file.size());
+    loop {
+        let mut buffer = vec![0; 512 * 2];
+        match file.read(&mut buffer) {
+            Ok(0) => break,
+            Err(x) => panic!("WTF {:}", x),
+            Ok(n) => {
+                if n != buffer.len() {
+                    buffer.truncate(n);
+                }
+                let strs = String::from_utf8(buffer).unwrap();
+                print!("{}", &strs);
+            }
+        }
+    }
+    assert!(false);
+}
+*/
+
 fn hash_file<T: File>(hash: &mut String, mut file: T) -> ::std::fmt::Result {
     use std::fmt::Write;
     use std::collections::hash_map::DefaultHasher;
@@ -289,7 +316,7 @@ fn hash_files_recursive<P: AsRef<Path>>(
     path: P
 ) -> ::std::fmt::Result {
     let path = path.as_ref();
-    println!("path={:?}", path);
+    // println!("path={:?}", path);
     let mut entries = vfat.open_dir(path)
         .expect("directory")
         .entries()

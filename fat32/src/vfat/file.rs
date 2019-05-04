@@ -1,8 +1,8 @@
-use std::cmp::{min, max};
+use std::cmp::{min};
 use std::io::{self, SeekFrom};
 
 use traits;
-use vfat::{VFat, Shared, Cluster, Metadata, FatEntry, Status};
+use vfat::{VFat, Shared, Cluster, Metadata, Status};
 
 #[derive(Debug)]
 pub struct File {
@@ -43,26 +43,34 @@ impl traits::File for File {
 
 impl io::Read for File {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        println!("read: cluster={:?} name={:?}", self.start_cluster, self.name);
+        // println!("read: cluster={:?} name={:?}", self.start_cluster, self.name);
         let mut read = 0;
         let cluster_bytes = {
             let fs = self.fs.borrow();
             fs.bytes_per_sector as usize * fs.sectors_per_cluster as usize
         };
+        if self.size == 0 {
+            return Ok(0);
+        }
         loop {
             if buf.len() - read == 0 {
+                // println!("\nbuffer full. buf.len() = {:}", buf.len());
                 break;
             }
-            let (cluster_offset, cluster_bytes_remaining): (usize, usize) = (self.pos % cluster_bytes, cluster_bytes - self.pos as usize);
+            let cluster_offset = self.pos % cluster_bytes;
+            let cluster_bytes_remaining = cluster_bytes - cluster_offset;
             let max_read = min(min(cluster_bytes_remaining, buf.len() - read), self.size as usize - self.pos as usize);
             let mut fs = self.fs.borrow_mut();
-            let bytes_read = fs.read_cluster(self.curr, cluster_offset, &mut buf[0..max_read])?;
+            let bytes_read = fs.read_cluster(self.curr, cluster_offset, &mut buf[read..(read + max_read)])?;
             read += bytes_read;
+            self.pos += bytes_read;
             if self.pos == self.size as usize {
+                // println!("\nend of file. file.size() = {:}", self.size);
                 break;
             }
             if bytes_read == cluster_bytes_remaining {
                 let entry = fs.fat_entry(self.curr)?;
+                // println!("{:#?} bytes_read={:} cluster_bytes_remaining={:} cluster_bytes={:} max_read={:}", &self, bytes_read, cluster_bytes_remaining, cluster_bytes, max_read);
                 match entry.status() {
                     Status::Data(cluster) => self.curr = cluster, 
                     Status::Eoc(_) => panic!("read past end of chain"),
@@ -72,6 +80,7 @@ impl io::Read for File {
                 }
             }
         }
+        // println!("read={:} pos={:}", read, self.pos);
         Ok(read)
     }
 }

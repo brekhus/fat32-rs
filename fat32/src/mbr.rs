@@ -67,7 +67,7 @@ impl MasterBootRecord {
                     _ => return Err(Error::UnknownBootIndicator(i as u8))
                 };
             };
-            println!("mbr = {:?}", mbr);
+            // println!("mbr = {:#?}", mbr);
             Ok(mbr)
         } else {
             Err(Error::BadSignature)

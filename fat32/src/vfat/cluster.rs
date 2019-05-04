@@ -1,9 +1,7 @@
 use std::fmt;
 
-use vfat::*;
-
 #[derive(PartialEq, Eq, PartialOrd, Ord, Copy, Clone, Hash)]
-pub struct Cluster(pub u32);
+pub struct Cluster(u32);
 
 impl From<u32> for Cluster {
     fn from(raw_num: u32) -> Cluster {
@@ -14,15 +12,19 @@ impl From<u32> for Cluster {
 
 impl Cluster {
 
-    pub fn offset(&self) -> u32 {
-        self.0 - 1
+    pub fn data_offset(&self) -> u64 {
+        self.0 as u64 - 2u64
+    }
+
+    pub fn id(&self) -> u32 {
+        self.0
     }
 
     pub fn has_next(&self) -> bool {
         match self.0 {
             0x2..=0xFFFFFEF => true,
             0xFFFFFF8..=0xFFFFFFF => false,
-            _=> panic!("invalid cluster address: cluster=0x?{:03x}", self.0),
+            _=> panic!("invalid cluster address: {:?}", &self),
         }
     }
 }

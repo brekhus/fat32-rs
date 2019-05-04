@@ -1,11 +1,9 @@
-use std::cmp::min;
 use std::io::Write;
 use std::io;
 use std::mem::size_of;
 use std::ops::Range;
 use std::path::{Path, Component};
 
-use util::SliceExt;
 use mbr::MasterBootRecord;
 use vfat::{Shared, Cluster, File, Dir, Entry, FatEntry, Error, Status};
 use vfat::{Metadata, Attributes, Date, Time, Timestamp};
@@ -20,6 +18,7 @@ pub struct VFat {
     sectors_per_fat: u32,
     fat_start_sector: u64,
     data_start_sector: u64,
+    data_sectors: u64,
     root_dir_cluster: Cluster,
 }
 
@@ -47,8 +46,15 @@ impl VFat {
         let bpb = BiosParameterBlock::from(&mut device, part_start)?;
         let part = Partition { start: part_start, sector_size: bpb.sector_bytes as u64 };
         let part_device = CachedDevice::new(device, part);
-        let data_start_sector: u64 = (bpb.reserved_sectors as u64) 
+        let data_start_sector = (bpb.reserved_sectors as u64) 
                 + ((bpb.sectors_per_fat as u64) * (bpb.fat_count as u64));
+
+        let logical_sectors = if bpb.logical_sectors_small != 0 {
+            bpb.logical_sectors_small as u64
+        } else {
+            bpb.logical_sectors_large as u64
+        };
+
 
         Ok(Shared::new(VFat { 
             device: part_device,
@@ -57,12 +63,13 @@ impl VFat {
             sectors_per_fat: bpb.sectors_per_fat as u32,
             fat_start_sector: bpb.reserved_sectors as u64,
             data_start_sector: data_start_sector,
-            root_dir_cluster: Cluster::from(bpb.root_start_cluster)
+            root_dir_cluster: Cluster::from(bpb.root_start_cluster),
+            data_sectors: logical_sectors - data_start_sector,
         }))
     }
 
     fn coords(&self, cluster: Cluster, offset: usize) -> (Range<u64>, usize) {
-        let cluster_start_sector = self.data_start_sector + (((cluster.0  - 1) as u64) * (self.sectors_per_cluster as u64));
+        let cluster_start_sector = self.data_start_sector + (cluster.data_offset() * (self.sectors_per_cluster as u64));
         let start_sector = cluster_start_sector + ((offset / (self.bytes_per_sector as usize)) as u64);
         let end_sector = cluster_start_sector + (self.sectors_per_cluster as u64);
         let sector_offset = offset % (self.bytes_per_sector as usize);
@@ -76,12 +83,12 @@ impl VFat {
         offset: usize,
         mut buf: &mut [u8]
     ) -> io::Result<usize> {
-        println!("cluster={:?} offset=0x{:08x}", cluster, offset);
+        // println!("{:?} offset=0x{:08x}", cluster, offset);
         assert!(offset < (self.sectors_per_cluster as usize) * (self.bytes_per_sector as usize),
                 "read offset exceeds cluster size");
 
         let (sectors, start_offset) = { self.coords(cluster, offset) };
-        println!("sectors={:?} byteoffset={:?}", sectors, start_offset);
+        // println!("sectors={:?} byteoffset={:?}", sectors, start_offset);
         let mut bytes_read = 0;
         let start_sector = sectors.start;
         for sector in sectors {
@@ -122,15 +129,17 @@ impl VFat {
         Ok(bytes_read)
     }
 
+
     pub fn fat_entry(&mut self, cluster: Cluster) -> io::Result<&FatEntry> {
-        println!("cluster={:?}", cluster);
-        assert!(cluster.0 < (self.bytes_per_sector as u32 * (self.sectors_per_fat as u32 / size_of::<FatEntry>() as u32)), "cluster out of bounds");
-        let entry_sector = self.fat_start_sector + (cluster.0 as u64 * size_of::<FatEntry>() as u64 / self.bytes_per_sector as u64);
-        let entry_offset = ((cluster.0 * size_of::<FatEntry>() as u32) % self.bytes_per_sector as u32) as usize;
-        let mut fat_entry = &mut (self.device.get_mut(entry_sector)?[entry_offset]) as *mut u8 as *mut FatEntry;
+        // println!("fat_entry({:?})", cluster);
+        assert!(cluster.data_offset() < self.data_sectors, "cluster out of bounds");
+        let cluster_fat_offset = cluster.id() * (size_of::<FatEntry>() as u32);
+        let entry_sector = self.fat_start_sector + (cluster_fat_offset as u64) / (self.bytes_per_sector as u64);
+        let entry_offset = (cluster_fat_offset % (self.bytes_per_sector as u32)) as usize;
+        let fat_entry = &mut (self.device.get_mut(entry_sector)?[entry_offset]) as *mut u8 as *mut FatEntry;
 
         unsafe {
-            println!("cluster={:?} entry_sector={:08x} entry_offset={:08x} fat_entry={:?}", cluster, entry_sector, entry_offset, *fat_entry);
+            // println!("{:?} entry_sector={:08x} entry_offset={:08x} {:?}", cluster, entry_sector, entry_offset, *fat_entry);
             Ok(&*fat_entry)
         }
     }
@@ -147,10 +156,12 @@ impl<'a> FileSystem for &'a Shared<VFat> {
 
     fn open<P: AsRef<Path>>(self, path: P) -> io::Result<Self::Entry> {
         let mut cwd = self.borrow_mut().root(self);
+        /*
         {
-            let mut fs = self.borrow_mut();
-            println!("fs: {:?}", *fs);
+            let fs = self.borrow_mut();
+            // println!("{:#?}", *fs);
         }
+        */
         let mut iter = path.as_ref().components().peekable();
         assert_eq!(iter.next(), Some(Component::RootDir));
         loop {

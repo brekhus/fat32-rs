@@ -102,17 +102,17 @@ impl CachedDevice {
 
     fn get_internal(&mut self, sector: u64, dirty: bool) -> io::Result<&mut [u8]> {
         let (phys_sector, count) = { self.virtual_to_physical(sector + self.partition.start) };
-        println!("logical_sector={:} phys_sector_offset={:} count={:}", sector, phys_sector, count);
-        let mut entry = self.cache.entry(sector);
+        // println!("logical_sector={:} phys_sector_offset={:} count={:}", sector, phys_sector, count);
+        let entry = self.cache.entry(sector);
         match entry {
-            Entry::Occupied(mut oe) => {
+            Entry::Occupied(oe) => {
                 let mut cache_entry = oe.into_mut();
                 if dirty {
                     cache_entry.dirty = true;
                 }
                 return Ok(&mut cache_entry.data);
             },
-            Entry::Vacant(mut ve) => {
+            Entry::Vacant(ve) => {
                 let mut data = Vec::with_capacity((count * self.device.sector_size()) as usize);
                 for i in phys_sector..(phys_sector + count) {
                     self.device.read_all_sector(i, &mut data)?;
@@ -135,7 +135,7 @@ impl BlockDevice for CachedDevice {
 
     fn write_sector(&mut self, n: u64, buf: &[u8]) -> io::Result<usize> {
         let sector_size = { self.sector_size() as usize };
-        if let Some(mut entry) = self.cache.get_mut(&n) {
+        if let Some(entry) = self.cache.get_mut(&n) {
             if buf.len() < sector_size {
                 Err(io::Error::new(io::ErrorKind::UnexpectedEof, "write too small"))
             } else {
