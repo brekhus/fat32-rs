@@ -51,14 +51,11 @@ impl BiosParameterBlock {
         let mut bpb: BiosParameterBlock = unsafe { mem::uninitialized() };
         {
             let mut bpb_as_buf = unsafe {
-                slice::from_raw_parts_mut(
-                    &mut bpb as *mut BiosParameterBlock as *mut u8, 
-                    512)
+                slice::from_raw_parts_mut(&mut bpb as *mut BiosParameterBlock as *mut u8, 512)
             };
             device.read_sector(sector, &mut bpb_as_buf)?;
         }
         if bpb.partition_signature == 0xAA55 {
-            // println!("bpb = {:#?}", bpb);
             Ok(bpb)
         } else {
             Err(Error::BadSignature)

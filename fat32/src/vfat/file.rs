@@ -43,7 +43,6 @@ impl traits::File for File {
 
 impl io::Read for File {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        // println!("read: cluster={:?} name={:?}", self.start_cluster, self.name);
         let mut read = 0;
         let cluster_bytes = {
             let fs = self.fs.borrow();
@@ -54,7 +53,7 @@ impl io::Read for File {
         }
         loop {
             if buf.len() - read == 0 {
-                // println!("\nbuffer full. buf.len() = {:}", buf.len());
+                // caller buffer is full
                 break;
             }
             let cluster_offset = self.pos % cluster_bytes;
@@ -65,12 +64,12 @@ impl io::Read for File {
             read += bytes_read;
             self.pos += bytes_read;
             if self.pos == self.size as usize {
-                // println!("\nend of file. file.size() = {:}", self.size);
+                // end of file
                 break;
             }
             if bytes_read == cluster_bytes_remaining {
-                let entry = fs.fat_entry(self.curr)?;
-                // println!("{:#?} bytes_read={:} cluster_bytes_remaining={:} cluster_bytes={:} max_read={:}", &self, bytes_read, cluster_bytes_remaining, cluster_bytes, max_read);
+                // advance to next cluster
+                let entry = fs.fat_entry(self.curr).unwrap();
                 match entry.status() {
                     Status::Data(cluster) => self.curr = cluster, 
                     Status::Eoc(_) => panic!("read past end of chain"),
@@ -80,13 +79,12 @@ impl io::Read for File {
                 }
             }
         }
-        // println!("read={:} pos={:}", read, self.pos);
         Ok(read)
     }
 }
 
 impl io::Write for File {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+    fn write(&mut self, _buf: &[u8]) -> io::Result<usize> {
         unimplemented!()
     }
 
@@ -109,7 +107,7 @@ impl io::Seek for File {
     ///
     /// Seeking before the start of a file or beyond the end of the file results
     /// in an `InvalidInput` error.
-    fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
+    fn seek(&mut self, _pos: SeekFrom) -> io::Result<u64> {
         unimplemented!("File::seek()")
     }
 }

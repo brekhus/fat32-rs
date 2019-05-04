@@ -61,18 +61,19 @@ impl VFatRegularDirEntry {
     fn name(&self, lfn: LfnEnt) -> String {
         if let LfnEnt::End(checksum, name, len) = lfn {
             if checksum == self.checksum() {
-                let mut actual_len = 0;
-                for (i, &chr) in name[0..((len + 1) as usize)].iter().enumerate() {
-                    actual_len = i;
+                let mut i = 0;
+                for &chr in &name[0..((len + 1) as usize)] {
                     if chr == 0 || chr == 0xFF {
                         break;
                     }
+                    i += 1;
                 }
 
-                let name = String::from_utf16(&name[0..actual_len]).expect("invalid long name");
+                let name = String::from_utf16(&name[0..i]).expect("invalid long name");
                 return name;
             }
         }
+
         let mut name = Vec::with_capacity(12);
         let sep = if self.ext[0] != 0x20  {
             [0x2E /* . */]
@@ -99,6 +100,17 @@ impl VFatRegularDirEntry {
         let id = (self.hi_cluster_part as u32) << 16 | (self.lo_cluster_part as u32);
         Cluster::from(id)
     }
+
+    fn into_entry(self, lfn_ent: LfnEnt, fs: Shared<VFat>) -> Entry {
+        let name = self.name(lfn_ent);
+        let metadata = self.metadata();
+        let start_cluster = self.start_cluster();
+        if self.attribs & 0x10 == 0x10 { // its a dir
+            Entry::Dir(Dir { fs, start_cluster, name, metadata, })
+        } else {
+            Entry::File(File::new(fs, start_cluster, name, metadata, self.size))
+        }
+    }
 }
 
 #[repr(C, packed)]
@@ -122,7 +134,6 @@ enum LfnSeq {
 }
 
 impl VFatLfnDirEntry {
-
     fn seq(&self) -> LfnSeq {
         if self.sequence_number == 0 {
             LfnSeq::EndOfDirectory 
@@ -144,11 +155,6 @@ impl VFatLfnDirEntry {
                 i += 1;
             }
         }
-        /*
-        {
-                let name = String::from_utf16(&name.clone()).expect("invalid long name");
-        }
-        */
         name
     }
 }
@@ -266,7 +272,6 @@ impl Iterator for DirIter {
     fn next(&mut self) -> Option<Self::Item> {
         let mut lfn_ent = LfnEnt::None;
         loop {
-            // println!("{:?}", lfn_ent);
             if self.curr_iter.is_some() {
                 let iter = &mut *self.curr_iter.as_mut().unwrap();
                 for entry in iter {
@@ -275,43 +280,16 @@ impl Iterator for DirIter {
                         DirEntry::Regular(ref r) => {
                             match r.seq() {
                                 RegularSeq::Deleted => continue,
-                                RegularSeq::EndOfDirectory =>  {
-                                    // println!("end of directory");
-                                    return None
-                                },
-                                RegularSeq::Valid => {
-                                    let name = r.name(lfn_ent);
-                                    let metadata = r.metadata();
-                                    if r.attribs & 0x10 != 0 {
-                                        // println!("dir name={:} md={:?}", name, metadata);
-                                        return Some(Entry::Dir(Dir { 
-                                            fs: self.fs.clone(),
-                                            start_cluster: r.start_cluster(), 
-                                            name,
-                                            metadata,
-                                        }));
-                                    } else {
-                                        // println!("file name={:} md={:?}", name, metadata);
-                                        return Some(Entry::File(File::new(
-                                            self.fs.clone(),
-                                            r.start_cluster(),
-                                            name,
-                                            metadata,
-                                            r.size)));
-                                    }
-                                }
+                                RegularSeq::EndOfDirectory => return None,
+                                RegularSeq::Valid => return Some(r.into_entry(lfn_ent, self.fs.clone())),
                             };
                         },
                         DirEntry::Lfn(ref lfn) => {
                             let seq = lfn.seq();
-                            // println!("{:?}", seq);
                             match seq {
                                 LfnSeq::Deleted => continue,
                                 LfnSeq::EndOfDirectory => return None,
-                                LfnSeq::Seq(_, _, _) => { 
-                                    lfn_ent = lfn_ent.next(seq, lfn); 
-                                    // println!("{:?}", lfn_ent);
-                                },
+                                LfnSeq::Seq(_, _, _) => { lfn_ent = lfn_ent.next(seq, lfn) },
                             };
                         }
                     };
@@ -327,25 +305,7 @@ impl Iterator for DirIter {
 
                 let bytes_read = fs.borrow_mut().read_cluster(cluster, 0, &mut buf).expect("read of directory failed");
                 assert_eq!(bytes_read, buf.capacity());
-                /*
-                let mut i = 0;
-                for &byte in &buf {
-                    print!("{:02x}", byte);
-                    i += 1;
-                    if i % 16 == 0 {
-                        println!();
-                    } else if i % 2 == 0 {
-                        print!(" ");
-                    }
-                }
-                println!();
-                */
                 let dirents : Vec<VFatUnknownDirEntry> = unsafe { buf.cast() };
-                /*
-                for (i, &dirent) in dirents.iter().enumerate() {
-                    // println!("dirents[{:02}] = Dirent(seq={:02x}, attribs={:02x} dtype={:02x} clust_num={:02x})", i, dirent.seq, dirent.attribs, dirent.dtype, dirent.clust_num);
-                }
-                */
                 self.curr_iter = Some(dirents.into_iter());
                 self.next = match fs.fat_entry(cluster).expect("directory cluster lookup failed").status() {
                     Status::Data(cluster) => Some(cluster),
@@ -365,7 +325,6 @@ impl traits::Dir for Dir {
     type Entry = Entry;
     type Iter = DirIter;
     fn entries(&self)-> io::Result<Self::Iter> {
-        // println!("directory='{:}' entries", self.name);
         Ok(DirIter { 
             fs: self.fs.clone(),
             next: Some(self.start_cluster),

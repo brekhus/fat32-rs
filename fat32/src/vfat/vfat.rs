@@ -156,27 +156,36 @@ impl<'a> FileSystem for &'a Shared<VFat> {
 
     fn open<P: AsRef<Path>>(self, path: P) -> io::Result<Self::Entry> {
         let mut cwd = self.borrow_mut().root(self);
-        /*
-        {
-            let fs = self.borrow_mut();
-            // println!("{:#?}", *fs);
-        }
-        */
         let mut iter = path.as_ref().components().peekable();
-        assert_eq!(iter.next(), Some(Component::RootDir));
+        if iter.next() != Some(Component::RootDir) {
+            return Err(io::Error::new(io::ErrorKind::InvalidInput, "not an absolute path"));
+        }
+
         loop {
             let el = match iter.next() {
                 Some(Component::Normal(x)) => x,
                 Some(_) => panic!(),
                 None => break,
             };
-            match cwd.find(el)? {
-                Entry::Dir(d) => cwd = d,
-                Entry::File(f) => {
+            match cwd.find(el) {
+                Err(x) => {
+                    match x.kind() {
+                        io::ErrorKind::NotFound => {
+                            if iter.peek().is_none() {
+                                return Err(io::Error::new(io::ErrorKind::NotFound, "file not found"));
+                            } else {
+                                return Err(io::Error::new(io::ErrorKind::InvalidInput, format!("directory does not exist: '{:?}'", el)));
+                            }
+                        },
+                        _ => return Err(x),
+                    }
+                },
+                Ok(Entry::Dir(d)) => cwd = d,
+                Ok(Entry::File(f)) => {
                     if iter.peek().is_none() {
                         return Ok(Entry::File(f));
                     } else {
-                        return Err(io::Error::new(io::ErrorKind::NotFound, "file not found"));
+                        return Err(io::Error::new(io::ErrorKind::InvalidInput, format!("not a directory: '{:?}'", el)));
                     }
                 }
             }

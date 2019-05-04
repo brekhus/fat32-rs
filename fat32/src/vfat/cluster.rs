@@ -11,7 +11,6 @@ impl From<u32> for Cluster {
 }
 
 impl Cluster {
-
     pub fn data_offset(&self) -> u64 {
         self.0 as u64 - 2u64
     }
@@ -34,6 +33,3 @@ impl fmt::Debug for Cluster {
         write!(f, "Cluster(0x?{:07x})", self.0)
     }
 }
-
-
-// TODO: Implement any useful helper methods on `Cluster`.
