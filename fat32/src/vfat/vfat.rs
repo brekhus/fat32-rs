@@ -83,12 +83,10 @@ impl VFat {
         offset: usize,
         mut buf: &mut [u8]
     ) -> io::Result<usize> {
-        // println!("{:?} offset=0x{:08x}", cluster, offset);
         assert!(offset < (self.sectors_per_cluster as usize) * (self.bytes_per_sector as usize),
                 "read offset exceeds cluster size");
 
         let (sectors, start_offset) = { self.coords(cluster, offset) };
-        // println!("sectors={:?} byteoffset={:?}", sectors, start_offset);
         let mut bytes_read = 0;
         let start_sector = sectors.start;
         for sector in sectors {
@@ -131,7 +129,6 @@ impl VFat {
 
 
     pub fn fat_entry(&mut self, cluster: Cluster) -> io::Result<&FatEntry> {
-        // println!("fat_entry({:?})", cluster);
         assert!(cluster.data_offset() < self.data_sectors, "cluster out of bounds");
         let cluster_fat_offset = cluster.id() * (size_of::<FatEntry>() as u32);
         let entry_sector = self.fat_start_sector + (cluster_fat_offset as u64) / (self.bytes_per_sector as u64);
@@ -139,7 +136,6 @@ impl VFat {
         let fat_entry = &mut (self.device.get_mut(entry_sector)?[entry_offset]) as *mut u8 as *mut FatEntry;
 
         unsafe {
-            // println!("{:?} entry_sector={:08x} entry_offset={:08x} {:?}", cluster, entry_sector, entry_offset, *fat_entry);
             Ok(&*fat_entry)
         }
     }
@@ -164,7 +160,7 @@ impl<'a> FileSystem for &'a Shared<VFat> {
         loop {
             let el = match iter.next() {
                 Some(Component::Normal(x)) => x,
-                Some(_) => panic!(),
+                Some(_) => return Err(io::Error::new(io::ErrorKind::InvalidInput, "not an absolute path")),
                 None => break,
             };
             match cwd.find(el) {
